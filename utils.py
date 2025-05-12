@@ -118,15 +118,32 @@ def retrieval_caption_generation(prompt, image_paths, gpt_client, k_captions_per
     return captions
 
 def check_retrieved_image_relevance(prompt, image_paths, gpt_client):
-    msg = f'Please check if the following image matches the prompt "{prompt}". If it does, return "yes". If it does not, return "no".'
-    context_msgs = [{"role": "user",
-                     "content": [{"type": "text", "text": msg}]
-                     },
-                    {"role": "assistant",
-                     "content": [{"type": "text", "text": ""}]
-                     }]
-    ans = message_gpt(msg, gpt_client, image_paths, context_msgs=context_msgs)
-    return ans.strip().replace('"', '').replace("'", '')
+    relevance_results = {}
+    
+    # Construct the GPT message template
+    msg_template = (
+        f"Given the prompt: '{prompt}', rate the relevance of the following image. "
+        "Only answer with '2' if it is relevant, '1' if it is partially relevant"
+        " and '0' if it it has no relevance"
+    )
+    
+    print(msg_template)
+    # Prepare context messages for the GPT client
+    for image_path in image_paths:
+        context_msgs = [
+            {"role": "user", "content": [{"type": "text", "text": msg_template}]},
+            {"role": "assistant", "content": [{"type": "text", "text": ""}]}
+        ]
+        
+        # Send the message to the GPT client for the current image
+        ans = message_gpt(msg_template, gpt_client, [image_path], context_msgs=context_msgs)
+        response = ans.strip().replace('"', '').replace("'", '')
+        
+        # Store the relevance result
+        relevance_results[image_path] = response 
+    
+    return relevance_results
+
 
 def get_rephrased_prompt(prompt, gpt_client, image_paths=[], context_msgs=[], images_idx=-1):
     if not context_msgs:

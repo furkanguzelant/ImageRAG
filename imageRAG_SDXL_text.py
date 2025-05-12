@@ -66,6 +66,7 @@ if __name__ == "__main__":
     parser.add_argument("--mode", type=str, default="sd_first", choices=['sd_first', 'generation'])
     parser.add_argument("--only_rephrase", action='store_true')
     parser.add_argument("--retrieval_method", type=str, default="CLIP", choices=['CLIP', 'SigLIP', 'MoE', 'gpt_rerank', 'BLIP', 'CLIP+BLIP'])
+    parser.add_argument("--check_relevance", action='store_true', default=False)
 
     args = parser.parse_args()
 
@@ -187,7 +188,7 @@ if __name__ == "__main__":
 
     if args.retrieval_method == "BLIP":
         create_embeddings(captions)
-        paths = retrieve_image_from_caption(caption, k=1)
+        paths = retrieve_image_from_caption(caption, k=3)
     elif args.retrieval_method == "CLIP+BLIP":
         paths = retrieve_img_per_caption([caption], retrieval_image_paths, embeddings_path=embeddings_path,
                                         k=100, device=device, method="CLIP")
@@ -201,11 +202,20 @@ if __name__ == "__main__":
 
         create_embeddings(captions)
 
-        paths = retrieve_image_from_caption(caption, k=1)
+        paths = retrieve_image_from_caption(caption, k=3)
     else:
         paths = retrieve_img_per_caption([caption], retrieval_image_paths, embeddings_path=embeddings_path,
                                         k=1, device=device, method=args.retrieval_method)
-    
+
+    if args.check_relevance:
+      relevance = check_retrieved_image_relevance(caption, paths, client)
+      # Sort it based on relevance 
+      relevance_results = dict(sorted(relevance.items(), key=lambda item: item[1], reverse=True))
+      print("Relevance: ", relevance)
+
+      paths = next(iter(relevance_results))
+      relevance_score = relevance_results[paths]
+
     image_path = np.array(paths).flatten()[0]
     print("ref path:", image_path)
 
