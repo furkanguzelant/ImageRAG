@@ -120,24 +120,25 @@ if __name__ == "__main__":
     sd_first = args.mode == "sd_first"
 
     
-    # Generate captions from dataset
-    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+    if args.retrieval_method == "BLIP" or args.retrieval_method == "CLIP+BLIP":
+        # Generate captions from dataset
+        processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+        model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device, torch.float16)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.to(device, torch.float16)
 
-    embedding_model = SentenceTransformerEmbeddings(model_name="all-MiniLM-L12-v2")
+        embedding_model = SentenceTransformerEmbeddings(model_name="all-MiniLM-L12-v2")
 
-    dataset_path = f"datasets/{args.dataset}"
-    captions = []
-    for filename in os.listdir(dataset_path):
-        if filename.endswith(".jpg") or filename.endswith(".png"):
-            image_path = os.path.join(dataset_path, filename)
-            item = dict()
-            item["image_path"] = image_path
-            item["caption"] = generate_caption(image_path)
-            captions.append(item)
+        dataset_path = f"datasets/{args.dataset}"
+        captions = []
+        for filename in os.listdir(dataset_path):
+            if filename.endswith(".jpg") or filename.endswith(".png"):
+                image_path = os.path.join(dataset_path, filename)
+                item = dict()
+                item["image_path"] = image_path
+                item["caption"] = generate_caption(image_path)
+                captions.append(item)
 
 
     if sd_first:
@@ -185,6 +186,7 @@ if __name__ == "__main__":
         f.write(f"captions: {caption}\n")
 
     if args.retrieval_method == "BLIP":
+        create_embeddings(captions)
         paths = retrieve_image_from_caption(caption, k=1)
     elif args.retrieval_method == "CLIP+BLIP":
         paths = retrieve_img_per_caption([caption], retrieval_image_paths, embeddings_path=embeddings_path,
