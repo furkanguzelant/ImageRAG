@@ -117,6 +117,17 @@ def retrieval_caption_generation(prompt, image_paths, gpt_client, k_captions_per
     captions = message_gpt(msg3, gpt_client, image_paths, context_msgs=context_msgs, images_idx=0)
     return captions
 
+def check_retrieved_image_relevance(prompt, image_paths, gpt_client):
+    msg = f'Please check if the following image matches the prompt "{prompt}". If it does, return "yes". If it does not, return "no".'
+    context_msgs = [{"role": "user",
+                     "content": [{"type": "text", "text": msg}]
+                     },
+                    {"role": "assistant",
+                     "content": [{"type": "text", "text": ""}]
+                     }]
+    ans = message_gpt(msg, gpt_client, image_paths, context_msgs=context_msgs)
+    return ans.strip().replace('"', '').replace("'", '')
+
 def get_rephrased_prompt(prompt, gpt_client, image_paths=[], context_msgs=[], images_idx=-1):
     if not context_msgs:
         msg = f'Please rephrase the following prompt to make it clearer for a text-to-image generation model. If it\'s already clear, return it as it is. In your answer only provide the prompt and nothing else, and don\'t change the original meaning of the prompt. If it contains rare words, change the words to a description of their meaning. The prompt to be rephrased: "{prompt}"'

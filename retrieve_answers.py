@@ -36,7 +36,7 @@ if __name__ == "__main__":
     os.makedirs(args.out_path, exist_ok=True)
     out_txt_file = os.path.join(args.out_path, args.out_name + ".txt")
     f = open(out_txt_file, "w")
-    device = f"cuda:{args.device}" if args.device != -1 else "cpu"
+    device = "cuda" if torch.cuda.is_available() and args.device == -1 else "cpu"
     data_path = f"datasets/{args.dataset}"
 
     prompt_w_retreival = args.prompt
