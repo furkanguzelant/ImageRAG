@@ -144,6 +144,34 @@ def check_retrieved_image_relevance(prompt, image_paths, gpt_client):
     
     return relevance_results
 
+def rate_generated_outputs(prompt, out_image_paths, gpt_client):
+    """
+    Scores each generated output against the prompt for quality and prompt accuracy,
+    then selects and returns the best one.
+    """
+
+    k = len(out_image_paths)
+
+    # Template for scoring generations
+    msg = (f'Which of these images is the most similar to the prompt {prompt}?'
+       f'in your answer only provide the indices of the {k} most accurate images with a comma between them with no spaces, starting from index 0, e.g. answer: 0,3 if the most similar images are the ones in indices 0 and 3.'
+       f'If you can\'t determine, return the first {k} indices, e.g. 0,1 if {k}=2.')
+
+    context_msgs = [
+            {"role": "user", "content": [{"type": "text", "text": msg}]},
+            {"role": "assistant", "content": [{"type": "text", "text": ""}]}
+    ]
+
+    ans = message_gpt(msg, gpt_client, out_image_paths, context_msgs=context_msgs).strip().replace('"', '')
+
+    best_img_idx = int(ans.split(",")[0])
+    best_img_path = out_image_paths[best_img_idx]
+
+    print("Best image: ", best_img_path)
+
+    return best_img_path
+
+
 
 def get_rephrased_prompt(prompt, gpt_client, image_paths=[], context_msgs=[], images_idx=-1):
     if not context_msgs:

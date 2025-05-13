@@ -49,6 +49,29 @@ def create_embeddings(captions):
     os.makedirs("rag_index", exist_ok=True)
     vectorstore.save_local("rag_index")
 
+def generate_images_with_reference(images, new_prompt, out_path, out_name):
+
+    if type(images) is not list:
+      images = [images]
+    
+    outs = []
+    for idx, image_path in enumerate(images):
+      image = Image.open(image_path)
+
+      out_image = pipe_ip(
+          prompt=new_prompt,
+          ip_adapter_image=image,
+          negative_prompt="monochrome, lowres, bad anatomy, worst quality, low quality",
+          num_inference_steps=50,
+          generator=generator2,
+      ).images[0]
+    
+      cur_out_path = os.path.join(out_path, f"{out_name}_{idx}.png")
+      outs.append(cur_out_path)
+      out_image.save(cur_out_path)
+
+    return outs
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="imageRAG pipeline")
     parser.add_argument("--openai_api_key", type=str)
@@ -66,6 +89,7 @@ if __name__ == "__main__":
     parser.add_argument("--only_rephrase", action='store_true')
     parser.add_argument("--retrieval_method", type=str, default="CLIP", choices=['CLIP', 'SigLIP', 'MoE', 'gpt_rerank', 'BLIP', 'CLIP+BLIP'])
     parser.add_argument("--check_relevance", action='store_true', default=False)
+    parser.add_argument("--criticize_outputs", action='store_true', default=False)
 
     args = parser.parse_args()
 
@@ -212,22 +236,28 @@ if __name__ == "__main__":
       relevance_results = dict(sorted(relevance.items(), key=lambda item: item[1], reverse=True))
       print("Relevance: ", relevance)
 
-      paths = next(iter(relevance_results))
-      relevance_score = relevance_results[paths]
+      paths = list(relevance_results.keys())
+      best_path = paths[0]
+      relevance_score = relevance_results[best_path]
 
-    image_path = np.array(paths).flatten()[0]
+      if relevance_score == 0:
+        print("Retrieved images are not relevant")
+        # TODO 
+
+    if args.criticize_outputs:
+      image_paths = paths
+    else:
+      image_path = np.array(paths).flatten()[0]
     print("ref path:", image_path)
 
     new_prompt = f"According to this image of {caption}, generate {args.prompt}"
-    image = Image.open(image_path)
 
-    out_image = pipe_ip(
-        prompt=new_prompt,
-        ip_adapter_image=image,
-        negative_prompt="monochrome, lowres, bad anatomy, worst quality, low quality",
-        num_inference_steps=50,
-        generator=generator2,
-    ).images[0]
+    print("New prompt: ", new_prompt)
+    out_image_paths = generate_images_with_reference(paths, new_prompt, args.out_path, args.out_name)
 
-    cur_out_path = os.path.join(args.out_path, f"{args.out_name}.png")
-    out_image.save(cur_out_path)
+    if args.criticize_outputs:
+      print("Criticizing output")
+      best_img_path = rate_generated_outputs(args.prompt, out_image_paths, client)
+
+      new_path = args.out_name + "_final." + best_img_path.split(".")[1]
+      os.rename(best_img_path, new_path)
