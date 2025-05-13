@@ -26,8 +26,7 @@ def retrieve_image_from_caption(caption, k=3):
   retrieved_vectorstore = FAISS.load_local("rag_index", embedding_model, allow_dangerous_deserialization=True)
 
   # Example: retrieve similar captions
-  query = "cradle"
-  results = retrieved_vectorstore.similarity_search_with_score(query, k=k)
+  results = retrieved_vectorstore.similarity_search_with_score(caption, k=k)
 
   # Print results with scores
   result_paths = []
