@@ -1,6 +1,7 @@
 import argparse
 import os
 from PIL import Image
+from diffusers.pipelines import kandinsky3
 import numpy as np
 import openai
 import torch
@@ -101,7 +102,7 @@ if __name__ == "__main__":
     out_txt_file = os.path.join(args.out_path, args.out_name + ".txt")
     f = open(out_txt_file, "w")
     device = f"cuda:{args.device}" if int(args.device) >= 0 else "cuda"
-    data_path = f"datasets/{args.dataset}"
+    data_path = args.dataset
 
     prompt_w_retreival = args.prompt
 
@@ -143,7 +144,7 @@ if __name__ == "__main__":
 
     sd_first = args.mode == "sd_first"
 
-    
+    captions = []
     if args.retrieval_method == "BLIP" or args.retrieval_method == "CLIP+BLIP":
         # Generate captions from dataset
         processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
@@ -154,8 +155,7 @@ if __name__ == "__main__":
 
         embedding_model = SentenceTransformerEmbeddings(model_name="all-MiniLM-L12-v2")
 
-        dataset_path = f"datasets/{args.dataset}"
-        captions = []
+        dataset_path = args.dataset
         for filename in os.listdir(dataset_path):
             if filename.endswith(".jpg") or filename.endswith(".png"):
                 image_path = os.path.join(dataset_path, filename)
@@ -209,55 +209,88 @@ if __name__ == "__main__":
         caption = convert_res_to_captions(caption)[0]
         f.write(f"captions: {caption}\n")
 
-    if args.retrieval_method == "BLIP":
-        create_embeddings(captions)
-        paths = retrieve_image_from_caption(caption, k=3)
-    elif args.retrieval_method == "CLIP+BLIP":
-        paths = retrieve_img_per_caption([caption], retrieval_image_paths, embeddings_path=embeddings_path,
-                                        k=100, device=device, method="CLIP")
-        captions = []
-        paths = paths[0]
-        for image_path in paths:
-            item = dict()
-            item["image_path"] = image_path
-            item["caption"] = generate_caption(image_path)
-            captions.append(item)
+    def retrieve_image(caption, k, retrieval_method, blip_captions):
+      if retrieval_method == "BLIP":
+          create_embeddings(blip_captions)
+          paths = retrieve_image_from_caption(caption, k=k)
+      elif retrieval_method == "CLIP+BLIP":
+          paths = retrieve_img_per_caption([caption], retrieval_image_paths, embeddings_path=embeddings_path,
+                                          k=100, device=device, method="CLIP")
+          captions = []
+          paths = paths[0]
+          for image_path in paths:
+              item = dict()
+              item["image_path"] = image_path
+              item["caption"] = generate_caption(image_path)
+              captions.append(item)
 
-        create_embeddings(captions)
+          create_embeddings(blip_captions)
 
-        paths = retrieve_image_from_caption(caption, k=3)
-    else:
-        paths = retrieve_img_per_caption([caption], retrieval_image_paths, embeddings_path=embeddings_path,
-                                        k=1, device=device, method=args.retrieval_method)
+          paths = retrieve_image_from_caption(caption, k=k)
+      else:
+          paths = retrieve_img_per_caption([caption], retrieval_image_paths, embeddings_path=embeddings_path,
+                                          k=k, device=device, method=args.retrieval_method)
+      return paths
+
+    paths = retrieve_image(caption, k=3, retrieval_method=args.retrieval_method, blip_captions=captions)
 
     if args.check_relevance:
-      relevance = check_retrieved_image_relevance(caption, paths, client)
-      # Sort it based on relevance 
-      relevance_results = dict(sorted(relevance.items(), key=lambda item: item[1], reverse=True))
-      print("Relevance: ", relevance)
+      relevance_score = 0
+      max_attempts = 3
+      attempts = 0
+      while relevance_score == 0 and attempts < max_attempts:
+        relevance = check_retrieved_image_relevance(caption, paths, client)
+        # Sort it based on relevance 
+        relevance_results = dict(sorted(relevance.items(), key=lambda item: item[1], reverse=True))
+        print("Relevance: ", relevance)
 
-      paths = list(relevance_results.keys())
-      best_path = paths[0]
-      relevance_score = relevance_results[best_path]
+        paths = list(relevance_results.keys())
+        best_path = paths[0]
+        relevance_score = relevance_results[best_path]
 
-      if relevance_score == 0:
-        print("Retrieved images are not relevant")
-        # TODO 
+        if relevance_score == 0:
+          print("Retrieved images are not relevant")
+          attempts += 1
+          k = len(paths) * 2
+          paths = retrieve_image(caption, k=k, retrieval_method=args.retrieval_method, blip_captions=captions)
+          paths = paths[k // 2:]
+          print(paths)
+          # TODO 
+          # maybe change retrieval method?          
 
     if args.criticize_outputs:
       image_paths = paths
     else:
-      image_path = np.array(paths).flatten()[0]
+      image_path = paths[0].item(0)
     print("ref path:", image_path)
 
     new_prompt = f"According to this image of {caption}, generate {args.prompt}"
 
     print("New prompt: ", new_prompt)
-    out_image_paths = generate_images_with_reference(paths, new_prompt, args.out_path, args.out_name)
+    out_image_paths = generate_images_with_reference(image_path, new_prompt, args.out_path, args.out_name)
 
     if args.criticize_outputs:
       print("Criticizing output")
-      best_img_path = rate_generated_outputs(args.prompt, out_image_paths, client)
+      best_img_path, max_score = rate_generated_outputs(args.prompt, out_image_paths, client)
 
-      new_path = args.out_name + "_final." + best_img_path.split(".")[1]
+      while max_score < 3:
+        print("Output image does not match to the prompt")
+        ans = retrieval_caption_generation(new_prompt, [best_img_path],
+                                   gpt_client=client,
+                                   k_captions_per_concept=1,
+                                   k_concepts=1,
+                                   only_rephrase=args.only_rephrase)
+        caption = ans
+        caption = convert_res_to_captions(caption)[0]
+
+        paths = retrieve_image(caption, k=3, retrieval_method=args.retrieval_method, blip_captions=captions)
+        new_prompt = f"According to this image of {caption}, generate {args.prompt}"
+        out_image_paths = generate_images_with_reference(paths, new_prompt, args.out_path, args.out_name)
+
+        best_img_path, max_score = rate_generated_outputs(args.prompt, out_image_paths, client)
+        # maybe we can ask VLM to find the issue in the generated image
+        # TODO
+
+      out_path = os.path.join(args.out_path, args.out_name)
+      new_path = out_path + "_final." + best_img_path.split(".")[1]
       os.rename(best_img_path, new_path)

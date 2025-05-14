@@ -124,7 +124,8 @@ def check_retrieved_image_relevance(prompt, image_paths, gpt_client):
     msg_template = (
         f"Given the prompt: '{prompt}', rate the relevance of the following image. "
         "Only answer with '2' if it is relevant, '1' if it is partially relevant"
-        " and '0' if it it has no relevance"
+        " and '0' if it it has no relevance. The image is considered relevant if it includes"
+        "a concept or style mentioned in the prompt. "
     )
     
     print(msg_template)
@@ -153,9 +154,9 @@ def rate_generated_outputs(prompt, out_image_paths, gpt_client):
     k = len(out_image_paths)
 
     # Template for scoring generations
-    msg = (f'Which of these images is the most similar to the prompt {prompt}?'
-       f'in your answer only provide the indices of the {k} most accurate images with a comma between them with no spaces, starting from index 0, e.g. answer: 0,3 if the most similar images are the ones in indices 0 and 3.'
-       f'If you can\'t determine, return the first {k} indices, e.g. 0,1 if {k}=2.')
+    msg = (f"Given the prompt: '{prompt}', please rate the similarity of following images to the prompt"
+       f"on a scale from 1 (poor quality or inaccurate) to 10 (excellent quality and fully accurate to the prompt):\n"
+       f"In your answer only provide the scores of the images with a comma between them with no spaces.")
 
     context_msgs = [
             {"role": "user", "content": [{"type": "text", "text": msg}]},
@@ -164,12 +165,17 @@ def rate_generated_outputs(prompt, out_image_paths, gpt_client):
 
     ans = message_gpt(msg, gpt_client, out_image_paths, context_msgs=context_msgs).strip().replace('"', '')
 
-    best_img_idx = int(ans.split(",")[0])
-    best_img_path = out_image_paths[best_img_idx]
+    scores =  ans.split(",")
+    scores = [int(score) for score in scores]
+    max_score = max(scores)
+    max_index = scores.index(max_score)
+
+    best_img_path = out_image_paths[max_index]
 
     print("Best image: ", best_img_path)
+    print("Max score: ", max_score)
 
-    return best_img_path
+    return best_img_path, max_score
 
 
 
