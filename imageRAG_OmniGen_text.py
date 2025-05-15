@@ -135,12 +135,6 @@ if __name__ == "__main__":
                 item["caption"] = generate_caption(image_path)
                 blip_captions.append(item)
 
-        # for golden retriever exp
-        image_path = "/golden.jpg"
-        item = dict()
-        item["image_path"] = image_path
-        item["caption"] = generate_caption(image_path)
-        blip_captions.append(item)
 
     if args.mode == "omnigen_first":
         out_name = f"{args.out_name}_no_imageRAG.png"
@@ -242,12 +236,15 @@ if __name__ == "__main__":
                                                input_images + [out_image_paths],
                                                gpt_client=client,
                                                k_captions_per_concept=k_captions_per_concept)
-        caption = ans
-        caption = convert_res_to_captions(caption)[0]
+        if type(ans) != bool:
+            captions = convert_res_to_captions(ans)
+            f.write(f"captions: {captions}\n")
 
-        input_images = [out_image_paths]
+        # else use the previous generated captions
+
+        input_images = [out_image_paths] if max_score > 1 else []
         paths = retrieve_image(captions, k=k_imgs_per_caption, retrieval_method=args.retrieval_method, blip_captions=blip_captions)
-        
+        final_paths = np.array(paths).flatten().tolist()
         j = len(input_images)
         k = 3  # can use up to 3 images in prompt with omnigen
         paths = final_paths[:k - j]
@@ -255,8 +252,8 @@ if __name__ == "__main__":
         image_paths_extended = input_images + paths
 
         previous_img_desc = f"Generated base image: <img><|image_{j}|></img>"
-        concept_examples = ", ".join([f'{captions[i]}: <img><|image_{i + j + 1}|></img>' for i in range(len(paths))])
-        prompt_w_retreival =  f"Based on the previous generated image {previous_img_desc}, and the following concepts {concept_examples}, generate {args.prompt}"
+        concept_examples = ", ".join([f'{captions[i]}: <img><|image_{i + j + 1}|></img>' for i in range(len(captions))])
+        prompt_w_retreival =  f"Based on the previous {previous_img_desc}, and the following examples {concept_examples}, generate {args.prompt}"
 
         print(prompt_w_retreival)
         out_image_paths = run_omnigen(prompt_w_retreival, image_paths_extended, out_path, args)
