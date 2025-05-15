@@ -259,7 +259,7 @@ if __name__ == "__main__":
           # maybe change retrieval method?          
 
     if args.criticize_outputs:
-      image_paths = paths
+      image_path = paths
     else:
       image_path = paths[0].item(0)
     print("ref path:", image_path)
