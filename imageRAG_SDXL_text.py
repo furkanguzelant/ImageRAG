@@ -17,10 +17,13 @@ from utils import *
 from retrieval import *
 
 def generate_caption(image_path):
-    image = Image.open(image_path).convert("RGB")
-    inputs = processor(images=image, return_tensors="pt").to(device, torch.float16)
-    out = model.generate(**inputs, max_new_tokens=20, num_beams=5, no_repeat_ngram_size=3, early_stopping=True)
-    return processor.decode(out[0], skip_special_tokens=True)
+    try: 
+      image = Image.open(image_path).convert("RGB")
+      inputs = processor(images=image, return_tensors="pt").to(device, torch.float16)
+      out = model.generate(**inputs, max_new_tokens=20, num_beams=5, no_repeat_ngram_size=3, early_stopping=True)
+      return processor.decode(out[0], skip_special_tokens=True)
+    except:
+      return ""
 
 def retrieve_image_from_caption(caption, k=3):
   print("Caption:", caption)
@@ -238,6 +241,7 @@ if __name__ == "__main__":
       relevance_score = 0
       max_attempts = 3
       attempts = 0
+      k = 3
       while relevance_score == 0 and attempts < max_attempts:
         relevance = check_retrieved_image_relevance(caption, paths, client)
         # Sort it based on relevance 
@@ -246,12 +250,12 @@ if __name__ == "__main__":
 
         paths = list(relevance_results.keys())
         best_path = paths[0]
-        relevance_score = relevance_results[best_path]
+        relevance_score = int(relevance_results[best_path])
 
         if relevance_score == 0:
           print("Retrieved images are not relevant")
           attempts += 1
-          k = len(paths) * 2
+          k = k * 2
           paths = retrieve_image(caption, k=k, retrieval_method=args.retrieval_method, blip_captions=captions)
           paths = paths[k // 2:]
           print(paths)
